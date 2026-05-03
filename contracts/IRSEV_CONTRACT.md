@@ -21,8 +21,8 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
     - No speculation, only defined intent or observed behavior.
     - minimal reproduction steps or expected usage scenario
     - affected components / modules
-    - <!-- CONSTANTS:$(SCOPE_CORE) -->
-    - <!-- CONSTANTS:$(GUARDRAIL_NO_REWRITE) -->
+    - $$(SCOPE_CORE)
+    - $$(GUARDRAIL_NO_REWRITE)
 <!-- $$] -->
 <!-- $$} -->
 
@@ -59,9 +59,9 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
 <!-- $$[ -->
     - Provide precise code-level actions.
     - Target exact lines / blocks to modify.
-    - what to keep
-    - what to remove
-    - what to replace with
+    - What to keep
+    - What to remove
+    - What to replace with
     - Avoid broad rewrites.
     - step-by-step execution sequence
     - exact symbols / identifiers to match
@@ -81,7 +81,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
     - expected logs / return values
     - idempotency checks
     - failure scenarios and expected behavior
-    - <!-- CONSTANTS:$(SCOPE_CORE) -->
-    - <!-- CONSTANTS:$(GUARDRAIL_NO_REWRITE) -->
+    - $$(SCOPE_CORE)
+    - $$(GUARDRAIL_NO_REWRITE)
 <!-- $$] -->
 <!-- $$} -->
