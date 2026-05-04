@@ -30,9 +30,27 @@ var (
 	}
 )
 
+type ConstantEntry struct {
+	Key   string `json:"Key"`
+	Value string `json:"Value"`
+}
+
+type SectionEntry struct {
+	Name  string   `json:"Name"`
+	Items []string `json:"Items"`
+}
+
 type Contract struct {
 	Sections  map[string][]string
 	Constants map[string]string
+
+	OrderedConstants []ConstantEntry
+	OrderedSections  []SectionEntry
+}
+
+type RenderContract struct {
+	Constants []ConstantEntry `json:"Constants"`
+	Sections  []SectionEntry  `json:"Sections"`
 }
 
 func ParseFile(path string) (*Contract, error) {
@@ -43,49 +61,70 @@ func ParseFile(path string) (*Contract, error) {
 
 	content := string(contentBytes)
 
-	constants, err := parseConstants(content)
+	orderedConstants, constantsMap, err := parseConstants(content)
 	if err != nil {
 		return nil, err
 	}
 
-	sections, err := parseSections(content)
+	orderedSections, sectionsMap, err := parseSections(content)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := resolveConstants(sections, constants); err != nil {
+	if err := resolveConstants(orderedSections, constantsMap); err != nil {
 		return nil, err
 	}
+	mirrorSectionsToMap(orderedSections, sectionsMap)
 
 	return &Contract{
-		Sections:  sections,
-		Constants: constants,
+		Sections:         sectionsMap,
+		Constants:        constantsMap,
+		OrderedConstants: orderedConstants,
+		OrderedSections:  orderedSections,
 	}, nil
 }
 
-func parseConstants(content string) (map[string]string, error) {
+func (c *Contract) RenderView() RenderContract {
+	constants := make([]ConstantEntry, len(c.OrderedConstants))
+	copy(constants, c.OrderedConstants)
+
+	sections := make([]SectionEntry, len(c.OrderedSections))
+	for i := range c.OrderedSections {
+		items := make([]string, len(c.OrderedSections[i].Items))
+		copy(items, c.OrderedSections[i].Items)
+		sections[i] = SectionEntry{Name: c.OrderedSections[i].Name, Items: items}
+	}
+
+	return RenderContract{
+		Constants: constants,
+		Sections:  sections,
+	}
+}
+
+func parseConstants(content string) ([]ConstantEntry, map[string]string, error) {
 	start := strings.Index(content, constantsStartToken)
 	if start < 0 {
-		return nil, fmt.Errorf("constants block start token %q not found", constantsStartToken)
+		return nil, nil, fmt.Errorf("constants block start token %q not found", constantsStartToken)
 	}
 
 	end := strings.Index(content, constantsEndToken)
 	if end < 0 {
-		return nil, fmt.Errorf("constants block end token %q not found", constantsEndToken)
+		return nil, nil, fmt.Errorf("constants block end token %q not found", constantsEndToken)
 	}
 	if end <= start {
-		return nil, fmt.Errorf("constants block malformed: end token appears before start token")
+		return nil, nil, fmt.Errorf("constants block malformed: end token appears before start token")
 	}
 
 	block := content[start+len(constantsStartToken) : end]
 	preStart := strings.Index(block, preStartToken)
 	preEnd := strings.Index(block, preEndToken)
 	if preStart < 0 || preEnd < 0 || preEnd <= preStart {
-		return nil, fmt.Errorf("constants block must contain %q ... %q envelope", preStartToken, preEndToken)
+		return nil, nil, fmt.Errorf("constants block must contain %q ... %q envelope", preStartToken, preEndToken)
 	}
 
 	preBody := block[preStart+len(preStartToken) : preEnd]
 	scanner := bufio.NewScanner(strings.NewReader(preBody))
+	ordered := make([]ConstantEntry, 0, 16)
 	constants := make(map[string]string)
 
 	lineNo := 0
@@ -98,25 +137,26 @@ func parseConstants(content string) (map[string]string, error) {
 
 		matches := constantLinePattern.FindStringSubmatch(line)
 		if matches == nil {
-			return nil, fmt.Errorf("invalid constant line %d: %q", lineNo, line)
+			return nil, nil, fmt.Errorf("invalid constant line %d: %q", lineNo, line)
 		}
 
 		key := matches[1]
 		value := matches[2]
 		if _, exists := constants[key]; exists {
-			return nil, fmt.Errorf("duplicate constant key %q", key)
+			return nil, nil, fmt.Errorf("duplicate constant key %q", key)
 		}
 		constants[key] = value
+		ordered = append(ordered, ConstantEntry{Key: key, Value: value})
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan constants block: %w", err)
+		return nil, nil, fmt.Errorf("scan constants block: %w", err)
 	}
 
-	return constants, nil
+	return ordered, constants, nil
 }
 
-func parseSections(content string) (map[string][]string, error) {
+func parseSections(content string) ([]SectionEntry, map[string][]string, error) {
 	const (
 		stateOutside = iota
 		stateExpectHeading
@@ -126,7 +166,9 @@ func parseSections(content string) (map[string][]string, error) {
 	)
 
 	state := stateOutside
-	sections := make(map[string][]string)
+	sectionsMap := make(map[string][]string)
+	ordered := make([]SectionEntry, 0, 16)
+
 	currentSection := ""
 	currentItems := make([]string, 0, 16)
 
@@ -145,21 +187,21 @@ func parseSections(content string) (map[string][]string, error) {
 			}
 		case stateExpectHeading:
 			if !strings.HasPrefix(line, "## ") {
-				return nil, fmt.Errorf("line %d: expected section heading after %q", lineNo, sectionStartToken)
+				return nil, nil, fmt.Errorf("line %d: expected section heading after %q", lineNo, sectionStartToken)
 			}
 			sectionName := strings.TrimSpace(strings.TrimPrefix(line, "## "))
 			if sectionName == "" {
-				return nil, fmt.Errorf("line %d: section heading cannot be empty", lineNo)
+				return nil, nil, fmt.Errorf("line %d: section heading cannot be empty", lineNo)
 			}
-			if _, exists := sections[sectionName]; exists {
-				return nil, fmt.Errorf("line %d: duplicate section %q", lineNo, sectionName)
+			if _, exists := sectionsMap[sectionName]; exists {
+				return nil, nil, fmt.Errorf("line %d: duplicate section %q", lineNo, sectionName)
 			}
 			currentSection = sectionName
 			currentItems = make([]string, 0, 16)
 			state = stateExpectListStart
 		case stateExpectListStart:
 			if line != listStartToken {
-				return nil, fmt.Errorf("line %d: expected list start token %q", lineNo, listStartToken)
+				return nil, nil, fmt.Errorf("line %d: expected list start token %q", lineNo, listStartToken)
 			}
 			state = stateInList
 		case stateInList:
@@ -168,57 +210,68 @@ func parseSections(content string) (map[string][]string, error) {
 				continue
 			}
 			if line == "" || !strings.HasPrefix(line, "- ") {
-				return nil, fmt.Errorf("line %d: invalid list entry %q (must start with '- ')", lineNo, line)
+				return nil, nil, fmt.Errorf("line %d: invalid list entry %q (must start with '- ')", lineNo, line)
 			}
 			item := strings.TrimSpace(strings.TrimPrefix(line, "- "))
 			currentItems = append(currentItems, item)
 		case stateExpectSectionEnd:
 			if line != sectionEndToken {
-				return nil, fmt.Errorf("line %d: expected section end token %q", lineNo, sectionEndToken)
+				return nil, nil, fmt.Errorf("line %d: expected section end token %q", lineNo, sectionEndToken)
 			}
-			sections[currentSection] = currentItems
+			copiedItems := make([]string, len(currentItems))
+			copy(copiedItems, currentItems)
+			sectionsMap[currentSection] = copiedItems
+			ordered = append(ordered, SectionEntry{Name: currentSection, Items: copiedItems})
 			currentSection = ""
 			currentItems = nil
 			state = stateOutside
 		default:
-			return nil, fmt.Errorf("internal parser error: unknown state %d", state)
+			return nil, nil, fmt.Errorf("internal parser error: unknown state %d", state)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan sections: %w", err)
+		return nil, nil, fmt.Errorf("scan sections: %w", err)
 	}
 
 	if state != stateOutside {
-		return nil, fmt.Errorf("unexpected EOF: unclosed section/list block")
+		return nil, nil, fmt.Errorf("unexpected EOF: unclosed section/list block")
 	}
 
-	return sections, nil
+	return ordered, sectionsMap, nil
 }
 
-func resolveConstants(sections map[string][]string, constants map[string]string) error {
-	for sectionName, items := range sections {
-		for idx, item := range items {
+func resolveConstants(sections []SectionEntry, constants map[string]string) error {
+	for sectionIndex, section := range sections {
+		for itemIndex, item := range section.Items {
 			resolved, err := replaceConstantRefs(item, constants, htmlConstantRefPattern)
 			if err != nil {
-				return fmt.Errorf("section %q item %d: %w", sectionName, idx, err)
+				return fmt.Errorf("section %q item %d: %w", section.Name, itemIndex, err)
 			}
 
 			resolved, err = replaceConstantRefs(resolved, constants, shortConstantRefPattern)
 			if err != nil {
-				return fmt.Errorf("section %q item %d: %w", sectionName, idx, err)
+				return fmt.Errorf("section %q item %d: %w", section.Name, itemIndex, err)
 			}
 
 			for _, pattern := range unresolvedMarkerPatterns {
 				if pattern.MatchString(resolved) {
-					return fmt.Errorf("section %q item %d: unresolved constant token %q", sectionName, idx, resolved)
+					return fmt.Errorf("section %q item %d: unresolved constant token %q", section.Name, itemIndex, resolved)
 				}
 			}
 
-			sections[sectionName][idx] = resolved
+			sections[sectionIndex].Items[itemIndex] = resolved
 		}
 	}
 	return nil
+}
+
+func mirrorSectionsToMap(ordered []SectionEntry, sectionsMap map[string][]string) {
+	for _, section := range ordered {
+		items := make([]string, len(section.Items))
+		copy(items, section.Items)
+		sectionsMap[section.Name] = items
+	}
 }
 
 func replaceConstantRefs(input string, constants map[string]string, pattern *regexp.Regexp) (string, error) {

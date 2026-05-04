@@ -1,7 +1,7 @@
 package scl
 
 import (
-	"fmt"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,7 +52,34 @@ func TestParseFile_IRSEVContract(t *testing.T) {
 		t.Fatalf("unexpected ISSUE[1]: %q", issueItems[1])
 	}
 
-	fmt.Println(contract.Sections["ISSUE"])
+	if len(contract.OrderedConstants) < 2 {
+		t.Fatalf("expected at least 2 ordered constants, got %d", len(contract.OrderedConstants))
+	}
+	if contract.OrderedConstants[0].Key != "SCOPE_CORE" {
+		t.Fatalf("unexpected first constant key: %q", contract.OrderedConstants[0].Key)
+	}
+	if contract.OrderedConstants[1].Key != "GUARDRAIL_NO_REWRITE" {
+		t.Fatalf("unexpected second constant key: %q", contract.OrderedConstants[1].Key)
+	}
+
+	expectedSectionOrder := []string{"ISSUE", "ROOT_CAUSE", "SOLUTION", "EXECUTION", "VALIDATION"}
+	if len(contract.OrderedSections) < len(expectedSectionOrder) {
+		t.Fatalf("expected at least %d ordered sections, got %d", len(expectedSectionOrder), len(contract.OrderedSections))
+	}
+	for i, name := range expectedSectionOrder {
+		if contract.OrderedSections[i].Name != name {
+			t.Fatalf("unexpected section order at index %d: got %q, want %q", i, contract.OrderedSections[i].Name, name)
+		}
+	}
+
+	rendered, err := json.Marshal(contract.RenderView())
+	if err != nil {
+		t.Fatalf("marshal render view failed: %v", err)
+	}
+	renderedStr := string(rendered)
+	if strings.Contains(renderedStr, "<!-- CONSTANTS:$(") || strings.Contains(renderedStr, "$$(") {
+		t.Fatalf("render output contains unresolved constant token: %s", renderedStr)
+	}
 }
 
 func TestParseFile_StrictFailures(t *testing.T) {

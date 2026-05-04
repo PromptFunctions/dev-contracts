@@ -5,9 +5,9 @@
 </pre>
 <!-- CONSTANTS:END -->
 
+---
 
 # IRSEV Framework
-
 A minimal, structured prompt framework for guiding code changes with precision.
 Should be iterative-friendly in mind and promote efficient back-and-forth.
 

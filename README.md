@@ -5,7 +5,12 @@ Structured contract definitions and parser utilities for deterministic agent wor
 ## What This Repo Contains
 
 - `contracts/`: Markdown contract files (SCL-compatible contract sources).
+  - `contracts/IRSEV_CONTRACT.md`
+  - `contracts/DELIVERY_CONTRACT_EXPANDED.md`
 - `scl/`: Go SCL parser module.
+  - `scl/structured_contract.go`
+  - `scl/structured_contract_test.go`
+  - `scl/print_contract.go` (tiny runner to print parsed contract)
 - `file.md`: local working draft/example content.
 
 ## SCL Parser Module
@@ -29,7 +34,17 @@ Returned type:
 type Contract struct {
     Sections  map[string][]string
     Constants map[string]string
+
+    OrderedConstants []ConstantEntry
+    OrderedSections  []SectionEntry
 }
+```
+
+Render view (deterministic order for output):
+
+```go
+render := contract.RenderView()
+// top-level order: Constants first, then Sections
 ```
 
 ## Supported SCL DSL
@@ -79,6 +94,7 @@ KEY = "value"
 - No randomized behavior.
 - Line-scoped deterministic parser errors.
 - Section list item order is preserved exactly.
+- Ordered render output is deterministic and follows source declaration order.
 
 ## Tests
 
@@ -91,13 +107,15 @@ Run tests:
 go test ./scl -v
 ```
 
-If module wiring is not initialized in the current checkout, use:
+Print parsed contract struct (ordered render):
 
 ```bash
-GO111MODULE=off go test ./scl -v
+go run scl/print_contract.go
+go run scl/print_contract.go contracts/DELIVERY_CONTRACT_EXPANDED.md
 ```
 
 ## Notes
 
 - Parser is dynamic and generic by design: no hardcoded IRSEV struct fields.
-- Existing `contracts/IRSEV_CONTRACT.md` must follow SCL token rules for full positive parse coverage.
+- Map fields are kept for lookup compatibility.
+- Ordered slices are used for deterministic rendering/output order.
