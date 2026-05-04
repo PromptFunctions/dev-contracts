@@ -1,11 +1,13 @@
 package scl
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"text/template"
 )
 
 func TestParseFile_IRSEVContract(t *testing.T) {
@@ -79,6 +81,66 @@ func TestParseFile_IRSEVContract(t *testing.T) {
 	renderedStr := string(rendered)
 	if strings.Contains(renderedStr, "<!-- CONSTANTS:$(") || strings.Contains(renderedStr, "$$(") {
 		t.Fatalf("render output contains unresolved constant token: %s", renderedStr)
+	}
+
+	templateText := contract.GoTemplate()
+	if strings.TrimSpace(templateText) == "" {
+		t.Fatalf("GoTemplate returned empty template")
+	}
+	if templateText != contract.GoTemplate() {
+		t.Fatalf("GoTemplate must be deterministic across calls")
+	}
+	if !strings.Contains(templateText, "{{- range .Constants }}") {
+		t.Fatalf("template missing constants range")
+	}
+	if !strings.Contains(templateText, "## {{ .Name }}") {
+		t.Fatalf("template missing generic section heading")
+	}
+
+	tmpl, err := template.New("contract").Parse(templateText)
+	if err != nil {
+		t.Fatalf("template parse failed: %v", err)
+	}
+
+	tplView := contract.TemplateView()
+	if len(tplView.Constants) != len(contract.OrderedConstants) {
+		t.Fatalf("template constants size mismatch: got %d want %d", len(tplView.Constants), len(contract.OrderedConstants))
+	}
+	if len(tplView.Sections) != len(contract.OrderedSections) {
+		t.Fatalf("template sections size mismatch: got %d want %d", len(tplView.Sections), len(contract.OrderedSections))
+	}
+	for i := range tplView.Constants {
+		if strings.TrimSpace(tplView.Constants[i].Symbol) == "" {
+			t.Fatalf("constant symbol at index %d is empty", i)
+		}
+	}
+	for i := range tplView.Sections {
+		if strings.TrimSpace(tplView.Sections[i].Symbol) == "" {
+			t.Fatalf("section symbol at index %d is empty", i)
+		}
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, tplView); err != nil {
+		t.Fatalf("template execute failed: %v", err)
+	}
+
+	renderedTemplate := buf.String()
+	if strings.Contains(renderedTemplate, "<!-- CONSTANTS:$(") || strings.Contains(renderedTemplate, "$$(") {
+		t.Fatalf("template execute output contains unresolved constant token: %s", renderedTemplate)
+	}
+
+	expectedRenderedSectionOrder := []string{"## ISSUE", "## ROOT_CAUSE", "## SOLUTION", "## EXECUTION", "## VALIDATION"}
+	lastIdx := -1
+	for _, sectionHeader := range expectedRenderedSectionOrder {
+		idx := strings.Index(renderedTemplate, sectionHeader)
+		if idx < 0 {
+			t.Fatalf("rendered template missing section header %q", sectionHeader)
+		}
+		if idx <= lastIdx {
+			t.Fatalf("rendered template section order invalid around %q", sectionHeader)
+		}
+		lastIdx = idx
 	}
 }
 

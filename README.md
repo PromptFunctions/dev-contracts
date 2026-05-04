@@ -13,6 +13,64 @@ Structured contract definitions and parser utilities for deterministic agent wor
   - `scl/print_contract.go` (tiny runner to print parsed contract)
 - `file.md`: local working draft/example content.
 
+## What Is SCL (Structured Contract Language)
+
+SCL is a minimal DSL embedded in Markdown for deterministic contracts.
+
+- Humans can write/read the contract as normal Markdown.
+- Agents can parse it with strict structure rules.
+- The same source can drive both machine processing and final rendered contract output.
+
+SCL primitives in this repo:
+- constants block (`<!-- CONSTANTS:START --> ... <!-- CONSTANTS:END -->`)
+- section boundaries (`<!-- $${ --> ... <!-- $$} -->`)
+- list boundaries (`<!-- $$[ --> ... <!-- $$] -->`)
+- list entries (`- ...`)
+- constant references (`$$(KEY)` and `<!-- CONSTANTS:$(KEY) -->`)
+
+## Contract-Based Workflow
+
+Core pipeline:
+
+`SCL contract input -> DSL parser (scl/structured_contract.go) -> returns BOTH structured data and a Go template`
+
+### Role of the structured contract (struct)
+
+Use the parsed struct as the reference schema/shape for structured outputs in your LLM call.
+This applies regardless of provider (Anthropic/OpenAI/others): the key is structured outputs compatibility.
+
+### Role of the generated template
+
+Use the generated template after your structured-output JSON is returned.
+The template renders the final contract text that the agent sends back to the user (human or agent).
+
+Template usage is optional because JSON is already structured.
+However, rendering from returned JSON is the preferred contract-workflow pattern because it avoids accidental post-response mutation of contract values.
+
+## Working With Prompt Control
+
+`dev-contracts` and `PromptControl` can be used independently, but they are designed to compose well.
+
+### `PromptControl` role
+
+- Enforces deterministic key-level contract compliance on returned LLM JSON.
+- Uses Bloom-filter pre-check + exact-map verification to detect missing keys.
+- Returns explicit completion/missing status for enforcement loops.
+
+### Combined workflow (recommended)
+
+1. SCL contract input.
+2. Parse via `scl/structured_contract.go` into mapped contract data.
+3. Use that mapped contract data as the structured-output reference in your LLM call.
+4. Validate each returned JSON with Prompt Control to enforce exact contract structure.
+5. Re-prompt on missing keys until complete.
+6. Render final contract text from the returned JSON via generated template (preferred, mutation-safe path).
+
+Practical interpretation:
+
+- SCL-only workflows: structured contract workflows.
+- PromptControl + SCL workflows: high-fidelity contract workflows with deterministic caller-side enforcement.
+
 ## SCL Parser Module
 
 Package: `scl`  
@@ -47,6 +105,13 @@ render := contract.RenderView()
 // top-level order: Constants first, then Sections
 ```
 
+Template generation API:
+
+```go
+tpl := contract.GoTemplate()     // generic Go template text
+view := contract.TemplateView()  // data to execute that template
+```
+
 ## Third-Party Usage
 
 Import path:
@@ -70,6 +135,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
+	"text/template"
 
 	"github.com/PromptFunctions/dev-contracts/scl"
 )
@@ -91,6 +158,19 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println(string(out))
+
+	// Contract template generation + execution
+	tplText := contract.GoTemplate()
+	tpl, err := template.New("contract").Parse(tplText)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var b strings.Builder
+	if err := tpl.Execute(&b, contract.TemplateView()); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(b.String())
 }
 ```
 

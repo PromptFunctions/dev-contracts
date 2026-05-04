@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
+	"unicode"
 )
 
 const (
@@ -19,6 +21,29 @@ const (
 	listStartToken    = "<!-- $$[ -->"
 	listEndToken      = "<!-- $$] -->"
 )
+
+const contractTemplate = `# {{ .Title }}
+
+<!-- CONSTANTS:START -->
+<pre>
+{{- range .Constants }}
+    {{ .Key }} = "{{ .Value }}"
+{{- end }}
+</pre>
+<!-- CONSTANTS:END -->
+{{- range .Sections }}
+
+---
+<!-- $${ -->
+## {{ .Name }}
+<!-- $$[ -->
+{{- range .Items }}
+    - {{ . }}
+{{- end }}
+<!-- $$] -->
+<!-- $$} -->
+{{- end }}
+`
 
 var (
 	constantLinePattern      = regexp.MustCompile(`^([A-Z0-9_]+)\s*=\s*"([^"]*)"\s*$`)
@@ -41,6 +66,8 @@ type SectionEntry struct {
 }
 
 type Contract struct {
+	Title string
+
 	Sections  map[string][]string
 	Constants map[string]string
 
@@ -53,6 +80,24 @@ type RenderContract struct {
 	Sections  []SectionEntry  `json:"Sections"`
 }
 
+type TemplateConstant struct {
+	Key    string
+	Value  string
+	Symbol string
+}
+
+type TemplateSection struct {
+	Name   string
+	Items  []string
+	Symbol string
+}
+
+type TemplateContract struct {
+	Title     string
+	Constants []TemplateConstant
+	Sections  []TemplateSection
+}
+
 func ParseFile(path string) (*Contract, error) {
 	contentBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -60,6 +105,7 @@ func ParseFile(path string) (*Contract, error) {
 	}
 
 	content := string(contentBytes)
+	title := parseTitle(content)
 
 	orderedConstants, constantsMap, err := parseConstants(content)
 	if err != nil {
@@ -77,6 +123,7 @@ func ParseFile(path string) (*Contract, error) {
 	mirrorSectionsToMap(orderedSections, sectionsMap)
 
 	return &Contract{
+		Title:            title,
 		Sections:         sectionsMap,
 		Constants:        constantsMap,
 		OrderedConstants: orderedConstants,
@@ -99,6 +146,55 @@ func (c *Contract) RenderView() RenderContract {
 		Constants: constants,
 		Sections:  sections,
 	}
+}
+
+func (c *Contract) TemplateView() TemplateContract {
+	constantNames := make([]string, len(c.OrderedConstants))
+	for i := range c.OrderedConstants {
+		constantNames[i] = c.OrderedConstants[i].Key
+	}
+	sectionNames := make([]string, len(c.OrderedSections))
+	for i := range c.OrderedSections {
+		sectionNames[i] = c.OrderedSections[i].Name
+	}
+
+	constantSymbols := buildSymbols(constantNames, "Constant")
+	sectionSymbols := buildSymbols(sectionNames, "Section")
+
+	constants := make([]TemplateConstant, len(c.OrderedConstants))
+	for i := range c.OrderedConstants {
+		constants[i] = TemplateConstant{
+			Key:    c.OrderedConstants[i].Key,
+			Value:  c.OrderedConstants[i].Value,
+			Symbol: constantSymbols[i],
+		}
+	}
+
+	sections := make([]TemplateSection, len(c.OrderedSections))
+	for i := range c.OrderedSections {
+		items := make([]string, len(c.OrderedSections[i].Items))
+		copy(items, c.OrderedSections[i].Items)
+		sections[i] = TemplateSection{
+			Name:   c.OrderedSections[i].Name,
+			Items:  items,
+			Symbol: sectionSymbols[i],
+		}
+	}
+
+	title := strings.TrimSpace(c.Title)
+	if title == "" {
+		title = "Structured Contract"
+	}
+
+	return TemplateContract{
+		Title:     title,
+		Constants: constants,
+		Sections:  sections,
+	}
+}
+
+func (c *Contract) GoTemplate() string {
+	return contractTemplate
 }
 
 func parseConstants(content string) ([]ConstantEntry, map[string]string, error) {
@@ -292,4 +388,62 @@ func replaceConstantRefs(input string, constants map[string]string, pattern *reg
 	}
 
 	return out, nil
+}
+
+func parseTitle(content string) string {
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "# ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "# "))
+		}
+	}
+	return ""
+}
+
+func buildSymbols(inputs []string, fallbackPrefix string) []string {
+	used := make(map[string]int, len(inputs))
+	out := make([]string, len(inputs))
+	for i, in := range inputs {
+		base := normalizeSymbol(in, fallbackPrefix)
+		count := used[base]
+		if count == 0 {
+			out[i] = base
+			used[base] = 1
+			continue
+		}
+		count++
+		used[base] = count
+		out[i] = base + strconv.Itoa(count)
+	}
+	return out
+}
+
+func normalizeSymbol(input, fallbackPrefix string) string {
+	var builder strings.Builder
+	capitalize := true
+	for _, r := range input {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if capitalize {
+				builder.WriteRune(unicode.ToUpper(r))
+				capitalize = false
+			} else {
+				builder.WriteRune(unicode.ToLower(r))
+			}
+			continue
+		}
+		capitalize = true
+	}
+
+	out := builder.String()
+	if out == "" {
+		out = fallbackPrefix
+	}
+	if len(out) > 0 {
+		first := rune(out[0])
+		if unicode.IsDigit(first) {
+			out = fallbackPrefix + out
+		}
+	}
+	return out
 }

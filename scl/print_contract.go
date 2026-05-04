@@ -29,7 +29,10 @@ func main() {
 		os.Exit(1)
 	}
 
+	fmt.Println("=== STRUCTURED_CONTRACT_JSON ===")
 	fmt.Println(string(out))
+	fmt.Println("=== STRUCTURED_CONTRACT_TEMPLATE ===")
+	fmt.Println(contract.GoTemplate())
 }
 
 func defaultContractPath() string {
