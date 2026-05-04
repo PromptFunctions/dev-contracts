@@ -47,6 +47,53 @@ render := contract.RenderView()
 // top-level order: Constants first, then Sections
 ```
 
+## Third-Party Usage
+
+Import path:
+
+```go
+import "github.com/PromptFunctions/dev-contracts/scl"
+```
+
+Install in your app:
+
+```bash
+go get github.com/PromptFunctions/dev-contracts/scl
+```
+
+Minimal app usage (similar to `scl/print_contract.go`):
+
+```go
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+
+	"github.com/PromptFunctions/dev-contracts/scl"
+)
+
+func main() {
+	contract, err := scl.ParseFile("contracts/IRSEV_CONTRACT.md")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Fast lookup usage
+	fmt.Println(contract.Sections["ISSUE"])
+	fmt.Println(contract.Constants["SCOPE_CORE"])
+
+	// Deterministic render usage (ordered output)
+	render := contract.RenderView()
+	out, err := json.MarshalIndent(render, "", "  ")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(out))
+}
+```
+
 ## Supported SCL DSL
 
 ### Constants block
