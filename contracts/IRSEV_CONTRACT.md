@@ -1,15 +1,16 @@
-<!-- CONSTANTS:START -->
-<pre>
-    SCOPE_CORE              = "changes limited to explicitly listed files and functions"
-    GUARDRAIL_NO_REWRITE    = "no full file rewrites or refactors"
-</pre>
-<!-- CONSTANTS:END -->
-
-
 # IRSEV Framework
 
 A minimal, structured prompt framework for guiding code changes with precision.
 Should be iterative-friendly in mind and promote efficient back-and-forth.
+
+---
+
+<!-- CONSTANTS:START -->
+<pre>
+    SCOPE_CORE   = "changes limited to explicitly listed files and functions"
+    GUARDRAIL    = "no full file rewrites or refactors"
+</pre>
+<!-- CONSTANTS:END -->
 
 ---
 
@@ -22,7 +23,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
     - minimal reproduction steps or expected usage scenario
     - affected components / modules
     - $$(SCOPE_CORE)
-    - $$(GUARDRAIL_NO_REWRITE)
+    - $$(GUARDRAIL)
 <!-- $$] -->
 <!-- $$} -->
 
@@ -91,6 +92,6 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
     - idempotency checks
     - failure scenarios and expected behavior
     - $$(SCOPE_CORE)
-    - $$(GUARDRAIL_NO_REWRITE)
+    - $$(GUARDRAIL)
 <!-- $$] -->
 <!-- $$} -->
