@@ -72,6 +72,9 @@ func TestParseFile_IRSEVContract(t *testing.T) {
 		if contract.OrderedSections[i].Name != name {
 			t.Fatalf("unexpected section order at index %d: got %q, want %q", i, contract.OrderedSections[i].Name, name)
 		}
+		if len(contract.OrderedSections[i].Routes) == 0 {
+			t.Fatalf("expected routed blocks for section %q", contract.OrderedSections[i].Name)
+		}
 	}
 
 	rendered, err := json.Marshal(contract.RenderView())
@@ -90,8 +93,8 @@ func TestParseFile_IRSEVContract(t *testing.T) {
 	if templateText != contract.GoTemplate() {
 		t.Fatalf("GoTemplate must be deterministic across calls")
 	}
-	if !strings.Contains(templateText, "{{- range .Constants }}") {
-		t.Fatalf("template missing constants range")
+	if !strings.Contains(templateText, "{{define \"route\"}}") {
+		t.Fatalf("template missing recursive route definition")
 	}
 	if !strings.Contains(templateText, "## {{ .Name }}") {
 		t.Fatalf("template missing generic section heading")
@@ -144,12 +147,111 @@ func TestParseFile_IRSEVContract(t *testing.T) {
 	}
 }
 
+func TestParseFile_NestedRoutes(t *testing.T) {
+	content := `
+<!-- CONSTANTS:START -->
+<pre>
+SCOPE_CORE = "scope"
+</pre>
+<!-- CONSTANTS:END -->
+
+<!-- $${ -->
+## EXECUTION
+<!-- $$[.steps -->
+- step a
+- step b
+<!-- $$] -->
+<!-- $$[.failure_modes -->
+- failure a
+<!-- $$] -->
+<!-- $$[.block -->
+- block item
+<!-- $$[.nested_block -->
+- nested one
+<!-- $$] -->
+<!-- $$] -->
+<!-- $$} -->
+`
+
+	path := writeTempContract(t, content)
+	contract, err := ParseFile(path)
+	if err != nil {
+		t.Fatalf("ParseFile nested routes failed: %v", err)
+	}
+
+	if len(contract.OrderedSections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(contract.OrderedSections))
+	}
+	sec := contract.OrderedSections[0]
+	if sec.Name != "EXECUTION" {
+		t.Fatalf("unexpected section name: %q", sec.Name)
+	}
+	if len(sec.Routes) != 3 {
+		t.Fatalf("expected 3 top-level routes, got %d", len(sec.Routes))
+	}
+	if sec.Routes[0].Term != "steps" || sec.Routes[1].Term != "failure_modes" || sec.Routes[2].Term != "block" {
+		t.Fatalf("unexpected top route order: %+v", sec.Routes)
+	}
+	if len(sec.Routes[2].Children) != 1 || sec.Routes[2].Children[0].Term != "nested_block" {
+		t.Fatalf("unexpected nested route tree under block: %+v", sec.Routes[2].Children)
+	}
+
+	routesBySection, ok := contract.SectionRoutes["execution"]
+	if !ok {
+		t.Fatalf("expected section routes for execution")
+	}
+	expectedPaths := []string{"execution.steps", "execution.failure_modes", "execution.block", "execution.block.nested_block"}
+	for _, p := range expectedPaths {
+		if _, ok := routesBySection[p]; !ok {
+			t.Fatalf("missing canonical route path %q", p)
+		}
+	}
+
+	if got := contract.Sections["EXECUTION"]; len(got) == 0 || got[0] != "step a" {
+		t.Fatalf("Sections compatibility mapping should map EXECUTION to first routed block items, got %v", got)
+	}
+
+	tpl := contract.GoTemplate()
+	tplExec, err := template.New("contract").Parse(tpl)
+	if err != nil {
+		t.Fatalf("template parse failed: %v", err)
+	}
+	var out bytes.Buffer
+	if err := tplExec.Execute(&out, contract.TemplateView()); err != nil {
+		t.Fatalf("template execute failed: %v", err)
+	}
+	rendered := out.String()
+	if !strings.Contains(rendered, "<!-- $$[.steps -->") {
+		t.Fatalf("rendered template missing .steps route block: %s", rendered)
+	}
+	if !strings.Contains(rendered, "<!-- $$[.nested_block -->") {
+		t.Fatalf("rendered template missing nested route block: %s", rendered)
+	}
+}
+
 func TestParseFile_StrictFailures(t *testing.T) {
 	testCases := []struct {
 		name        string
 		content     string
 		errContains string
 	}{
+		{
+			name: "legacy list token unsupported",
+			content: `
+<!-- CONSTANTS:START -->
+<pre>
+SCOPE_CORE = "scope"
+</pre>
+<!-- CONSTANTS:END -->
+<!-- $${ -->
+## ISSUE
+<!-- $$[ -->
+- item
+<!-- $$] -->
+<!-- $$} -->
+`,
+			errContains: "legacy list token",
+		},
 		{
 			name: "malformed constants block",
 			content: `
@@ -178,11 +280,11 @@ K = "v"
 <!-- $${ -->
 ## ISSUE
 <!-- $$] -->
-<!-- $$[ -->
+<!-- $$[.description -->
 - item
 <!-- $$} -->
 `,
-			errContains: "expected list start token",
+			errContains: "unexpected list end token",
 		},
 		{
 			name: "invalid list line",
@@ -194,12 +296,12 @@ K = "v"
 <!-- CONSTANTS:END -->
 <!-- $${ -->
 ## ISSUE
-<!-- $$[ -->
+<!-- $$[.description -->
 not-a-list-item
 <!-- $$] -->
 <!-- $$} -->
 `,
-			errContains: "invalid list entry",
+			errContains: "invalid token",
 		},
 		{
 			name: "undefined constant reference",
@@ -211,12 +313,65 @@ KNOWN = "ok"
 <!-- CONSTANTS:END -->
 <!-- $${ -->
 ## ISSUE
-<!-- $$[ -->
+<!-- $$[.description -->
 - <!-- CONSTANTS:$(MISSING) -->
 <!-- $$] -->
 <!-- $$} -->
 `,
 			errContains: "undefined constant key",
+		},
+		{
+			name: "invalid dotted single token route",
+			content: `
+<!-- CONSTANTS:START -->
+<pre>
+K = "v"
+</pre>
+<!-- CONSTANTS:END -->
+<!-- $${ -->
+## EXECUTION
+<!-- $$[.block.nested_block -->
+- item
+<!-- $$] -->
+<!-- $$} -->
+`,
+			errContains: "single-segment route terms",
+		},
+		{
+			name: "invalid hyphen route term",
+			content: `
+<!-- CONSTANTS:START -->
+<pre>
+K = "v"
+</pre>
+<!-- CONSTANTS:END -->
+<!-- $${ -->
+## EXECUTION
+<!-- $$[.failure-modes -->
+- item
+<!-- $$] -->
+<!-- $$} -->
+`,
+			errContains: "hyphen '-' is not allowed",
+		},
+		{
+			name: "unclosed nested route blocks",
+			content: `
+<!-- CONSTANTS:START -->
+<pre>
+K = "v"
+</pre>
+<!-- CONSTANTS:END -->
+<!-- $${ -->
+## EXECUTION
+<!-- $$[.block -->
+- item
+<!-- $$[.nested_block -->
+- nested
+<!-- $$] -->
+<!-- $$} -->
+`,
+			errContains: "closed before all list blocks were closed",
 		},
 	}
 

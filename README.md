@@ -24,7 +24,7 @@ SCL is a minimal DSL embedded in Markdown for deterministic contracts.
 SCL primitives in this repo:
 - constants block (`<!-- CONSTANTS:START --> ... <!-- CONSTANTS:END -->`)
 - section boundaries (`<!-- $${ --> ... <!-- $$} -->`)
-- list boundaries (`<!-- $$[ --> ... <!-- $$] -->`)
+- routed list boundaries (`<!-- $$[.term --> ... <!-- $$] -->`)
 - list entries (`- ...`)
 - constant references (`$$(KEY)` and `<!-- CONSTANTS:$(KEY) -->`)
 
@@ -186,22 +186,53 @@ KEY = "value"
 <!-- CONSTANTS:END -->
 ```
 
-### Section + list block
+### Section + routed list block
 
 ```md
 <!-- $${ -->
 ## SECTION_NAME
-<!-- $$[ -->
+<!-- $$[.term_name -->
 - item 1
 - item 2
 <!-- $$] -->
 <!-- $$} -->
 ```
 
+### Nested route blocks (stack-based)
+
+Valid nesting uses stacked route tokens:
+
+```md
+<!-- $${ -->
+## EXECUTION
+<!-- $$[.block -->
+    - block item
+<!-- $$[.nested_block -->
+    - nested item
+<!-- $$] -->
+<!-- $$] -->
+<!-- $$} -->
+```
+
+Not valid:
+
+```md
+<!-- $$[.block.nested_block -->
+```
+
+Use stacked blocks instead of dotted route paths in one token.
+
 ### Constant references resolved by parser
 
 - `<!-- CONSTANTS:$(KEY) -->`
 - `$$(KEY)`
+
+### Route term naming
+
+- Valid route term: `[A-Za-z_][A-Za-z0-9_]*`
+- Valid: `failure_modes`
+- Invalid: `failure-modes`
+- Invalid: `block.nested_block` (must be stacked as separate nested tokens)
 
 ## Validation Rules (Strict)
 

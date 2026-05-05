@@ -5,9 +5,9 @@
 </pre>
 <!-- CONSTANTS:END -->
 
----
 
 # IRSEV Framework
+
 A minimal, structured prompt framework for guiding code changes with precision.
 Should be iterative-friendly in mind and promote efficient back-and-forth.
 
@@ -15,7 +15,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
 
 <!-- $${ -->
 ## ISSUE
-<!-- $$[ -->
+<!-- $$[.description -->
     - Describe the objective, change request, or observed problem.
     - Use concrete examples when applicable (before → after).
     - No speculation, only defined intent or observed behavior.
@@ -30,7 +30,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
 
 <!-- $${ -->
 ## ROOT_CAUSE
-<!-- $$[ -->
+<!-- $$[.investigation -->
     - Identify the specific mechanism causing the issue.
     - Point to the exact function / logic responsible.
     - Explain *why* the current behavior happens.
@@ -43,7 +43,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
 
 <!-- $${ -->
 ## SOLUTION
-<!-- $$[ -->
+<!-- $$[.intent -->
     - Define the intended behavior clearly.
     - State the rule or invariant to enforce.
     - Do not describe implementation yet.
@@ -56,7 +56,7 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
 
 <!-- $${ -->
 ## EXECUTION
-<!-- $$[ -->
+<!-- $$[.steps -->
     - Provide precise code-level actions.
     - Target exact lines / blocks to modify.
     - What to keep
@@ -66,13 +66,22 @@ Should be iterative-friendly in mind and promote efficient back-and-forth.
     - step-by-step execution sequence
     - exact symbols / identifiers to match
 <!-- $$] -->
+<!-- $$[.failure_modes -->
+    - Define explicit failure modes for each step.
+    - Identify what can break during execution (logic, parsing, state, side-effects).
+    - Specify how failures are detected (errors, logs, invalid states).
+    - Define expected system behavior on failure (retry, abort, fallback).
+    - Ensure no silent failures (must surface errors deterministically).
+    - Validate post-conditions after each step.
+    - List invariants that must remain true during execution.
+<!-- $$] -->
 <!-- $$} -->
 
 ---
 
 <!-- $${ -->
 ## VALIDATION
-<!-- $$[ -->
+<!-- $$[.checks -->
     - List concrete checks:
     - visual outputs
     - edge cases
